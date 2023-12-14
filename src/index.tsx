@@ -1,12 +1,12 @@
 import { Ai } from "@cloudflare/ai";
-import { Hono } from "hono";
-import { jsxRenderer } from "hono/jsx-renderer";
+import { AiTextToImageInput } from "@cloudflare/ai/dist/tasks/text-to-image";
+import { Context, Hono } from "hono";
+import { serveStatic } from "hono/cloudflare-workers";
 import { renderToReadableStream } from "hono/jsx/streaming";
 
-import { AiTextToImageInput } from "@cloudflare/ai/dist/tasks/text-to-image";
 import Home from "./components/home";
+import Imagine from "./components/imagine";
 import Layout from "./components/layout";
-import Result from "./components/result";
 
 type Bindings = {
 	AI: object;
@@ -34,6 +34,34 @@ const uint8ArrayToBase64 = (u8: Uint8Array) => {
 	return btoa(bin);
 };
 
+const maybeGenerateImage = async (
+	promptHash: string,
+	c: Context<{ Bindings: Bindings }>,
+): Promise<string | null> => {
+	const prompt = await c.env.KV.get(promptHash);
+
+	if (prompt === null) {
+		return null;
+	}
+
+	const imageKey = `image_${promptHash}`;
+	const imageBase64 = await c.env.KV.get(imageKey);
+	if (imageBase64 !== null) {
+		return imageBase64;
+	}
+
+	const ai = new Ai(c.env.AI);
+	const inputs: AiTextToImageInput = {
+		prompt: prompt,
+		num_steps: 20,
+	};
+	const image: Uint8Array = await ai.run(SDXL_MODEL_NAME, inputs);
+	const imageBase64Encoded = uint8ArrayToBase64(image);
+	await c.env.KV.put(imageKey, imageBase64Encoded);
+
+	return imageBase64Encoded;
+};
+
 app.get("/", async (c) => {
 	return c.render(
 		<Layout>
@@ -41,6 +69,8 @@ app.get("/", async (c) => {
 		</Layout>,
 	);
 });
+
+app.get("/imagine", (c) => c.redirect("/"));
 
 app.post("/imagine", async (c) => {
 	const body = await c.req.parseBody();
@@ -55,48 +85,27 @@ app.post("/imagine", async (c) => {
 	const promptHash = await sha256hash(prompt);
 	await c.env.KV.put(promptHash, prompt);
 
-	const imageSrc = `/image/${promptHash}`;
+	const imagine = async () => {
+		const image = await maybeGenerateImage(promptHash, c);
+		return image === null
+			? "https://4.bp.blogspot.com/-97ehmgQAia0/VZt5RUaiYsI/AAAAAAAAu24/yrwP694zWZA/s800/computer_error_bluescreen.png"
+			: `data:image/png;base64,${image}`;
+	};
 
-	return c.render(
+	const stream = renderToReadableStream(
 		<Layout>
-			<Result prompt={prompt} imageSrc={imageSrc} />
+			<Imagine prompt={prompt} imagine={imagine} />
 		</Layout>,
 	);
-});
 
-app.get("/image/:promptHash", async (c) => {
-	const promptHash = c.req.param("promptHash");
-	const prompt = await c.env.KV.get(promptHash);
-
-	if (prompt === null) {
-		return c.notFound();
-	}
-
-	const imageKey = `image_${promptHash}`;
-	const imageBase64 = await c.env.KV.get(imageKey);
-	if (imageBase64 !== null) {
-		const image = Uint8Array.from(atob(imageBase64), (c) => c.charCodeAt(0));
-		return c.newResponse(image, {
-			headers: {
-				"content-type": "image/png",
-			},
-		});
-	}
-
-	const ai = new Ai(c.env.AI);
-	const inputs: AiTextToImageInput = {
-		prompt: prompt,
-		num_steps: 20,
-	};
-	const image: Uint8Array = await ai.run(SDXL_MODEL_NAME, inputs);
-	const imageBase64Encoded = uint8ArrayToBase64(image);
-	await c.env.KV.put(imageKey, imageBase64Encoded);
-
-	return c.newResponse(image, {
+	return c.body(stream, {
 		headers: {
-			"content-type": "image/png",
+			"Content-Type": "text/html; charset=UTF-8",
+			"Transfer-Encoding": "chunked",
 		},
 	});
 });
+
+app.get("/assets/placeholder.jpg", serveStatic({ path: "./placeholder.jpg" }));
 
 export default app;

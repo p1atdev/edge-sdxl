@@ -5,3 +5,7 @@ kv_namespaces = [{ binding = "KV", id = "", preview_id = "" }]
 
 [ai]
 binding = "AI"
+
+[site]
+main = "src/index.tsx"
+bucket = "./assets"
