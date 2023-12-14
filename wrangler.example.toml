@@ -1,0 +1,7 @@
+name = "edge-sdxl"
+compatibility_date = "2023-01-01"
+
+kv_namespaces = [{ binding = "KV", id = "", preview_id = "" }]
+
+[ai]
+binding = "AI"

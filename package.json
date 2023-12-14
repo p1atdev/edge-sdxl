@@ -1,0 +1,15 @@
+{
+  "scripts": {
+    "dev": "wrangler dev src/index.tsx --remote",
+    "deploy": "wrangler deploy --minify src/index.tsx"
+  },
+  "dependencies": {
+    "hono": "^3.11.6"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.4.1",
+    "@cloudflare/ai": "^1.0.41",
+    "@cloudflare/workers-types": "^4.20230914.0",
+    "wrangler": "^3.20.0"
+  }
+}
